@@ -6,23 +6,22 @@ const bcrypt = require("bcryptjs");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// 1. CONEXÃO COM O MONGODB
-// O Railway vai preencher o process.env.MONGO_URL automaticamente
+// Conexão com o MongoDB do Railway
 mongoose.connect(process.env.MONGO_URL)
-  .then(() => console.log("✅ Conectado ao MongoDB com sucesso!"))
-  .catch(err => console.error("❌ Erro ao conectar ao MongoDB:", err));
+  .then(() => console.log("✅ Conectado ao MongoDB!"))
+  .catch(err => console.error("❌ Erro de conexão:", err));
 
-// 2. MODELOS DE DADOS (SCHEMAS)
+// Esquema de Usuário
 const UserSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true },
-  password: { type: String, required: true } // Aqui guardaremos o hash seguro
+  password: { type: String, required: true }
 });
 const User = mongoose.model("User", UserSchema);
 
+// Esquema de Itens (Fotos/Acervo)
 const ItemSchema = new mongoose.Schema({
   nome: String,
   descricao: String,
@@ -33,52 +32,35 @@ const ItemSchema = new mongoose.Schema({
 });
 const Item = mongoose.model("Item", ItemSchema);
 
-// 3. ROTAS
-
-// Rota principal de teste
-app.get("/", (req, res) => {
-  res.send("✅ Backend do Acervo (MongoDB) rodando com sucesso!");
-});
-
-// ROTA DE LOGIN (Segurança gerenciada pelo Railway/MongoDB)
+// ROTA DE LOGIN
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ success: false, message: "Usuário não encontrado" });
+    if (!user) return res.status(401).json({ success: false });
 
-    // Compara a senha enviada com a senha (hash) do banco
-    const senhaValida = await bcrypt.compare(password, user.password);
+    // Aceita senha em texto puro (para o 1º acesso via painel) ou hash Bcrypt
+    const senhaValida = (password === user.password) || await bcrypt.compare(password, user.password);
     
-    // Pequeno ajuste para seu primeiro login: se a senha for idêntica (texto puro), também aceita
-    if (senhaValida || user.password === password) {
-      res.json({ success: true, message: "Acesso permitido" });
+    if (senhaValida) {
+      res.json({ success: true });
     } else {
-      res.status(401).json({ success: false, message: "Senha incorreta" });
+      res.status(401).json({ success: false });
     }
   } catch (err) {
-    res.status(500).json({ success: false, message: "Erro no servidor" });
+    res.status(500).json({ success: false });
   }
 });
 
-// ROTA PARA SALVAR ITENS NO ACERVO
+// ROTA PARA SALVAR FOTOS
 app.post("/items", async (req, res) => {
-  const { nome, descricao, imagemUrl, cat, ano } = req.body;
   try {
-    const novoItem = new Item({ nome, descricao, imagemUrl, cat, ano });
+    const novoItem = new Item(req.body);
     await novoItem.save();
-    res.status(201).json({ message: "Item salvo no MongoDB!", item: novoItem });
+    res.status(201).json({ success: true, item: novoItem });
   } catch (err) {
-    res.status(500).json({ message: "Erro ao salvar item" });
+    res.status(500).json({ success: false });
   }
 });
 
-// ROTA PARA BUSCAR TODOS OS ITENS (Opcional para carregar o site)
-app.get("/items", async (req, res) => {
-  const itens = await Item.find().sort({ dataCriacao: -1 });
-  res.json(itens);
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor ativo na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servidor na porta ${PORT}`));
